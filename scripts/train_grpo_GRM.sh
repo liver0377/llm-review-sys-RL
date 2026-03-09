@@ -82,8 +82,8 @@ swift rlhf \
     --rlhf_type grpo \
     --model models/qwen3-8b-base \
     --reward_model ${REWARD_MODEL_PATH} \
-    --reward_model_type qwen \
-    --reward_func train.code.reward_function:combined_reward \
+    --reward_model_plugin train.code.genrm_plugin:get_review_genrm_plugin \
+    --external_plugins train/code/genrm_plugin.py \
     --alpha 1.0 \
     --format_weight 1.0 \
     --dataset data/openreview_dataset/grpo_train.json \

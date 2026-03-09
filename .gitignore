@@ -1,15 +1,16 @@
 pretrained/
-**/*.json
+# **/*.json
 **/*.jsonl
 **/*.log
 **/*.txt
 __pycache__/
 .ruff_cache
 models/
+model/
 wandb
 logs/
 .vscode/
-*/**/*.json
+data/**/*.json
 */**/*.txt
 */**/*.pdf
 data/**/*.md

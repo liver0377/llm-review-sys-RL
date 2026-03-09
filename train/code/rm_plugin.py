@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 import torch
-from swift.plugin import DefaultRMPlugin
+from swift.rewards.rm_plugin import DefaultRMPlugin
 from swift import TransformersEngine
 
 
