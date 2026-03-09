@@ -1,0 +1,15 @@
+pretrained/
+**/*.json
+**/*.jsonl
+**/*.log
+**/*.txt
+__pycache__/
+.ruff_cache
+models/
+wandb
+logs/
+.vscode/
+*/**/*.json
+*/**/*.txt
+*/**/*.pdf
+data/**/*.md
