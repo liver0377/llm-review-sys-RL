@@ -66,7 +66,7 @@ if [ ! -d "models/reward_model_qwen3_8b" ]; then
         --save_steps 200 \
         --save_total_limit 2 \
         --logging_steps 10 \
-        --deepspeed configs/deepspeed_zero3_config.json \
+        --deepspeed configs/deepspeed_zero2_config.json \
         --beta 0.1 \
         --report_to wandb \
         --run_name rm_qwen3_8b_v1

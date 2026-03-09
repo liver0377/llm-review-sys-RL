@@ -29,9 +29,31 @@ python scripts/convert_dpo_to_rm_swift_format.py \
 
 ### 3. 启动训练
 
+#### 方法1: 使用生成式奖励模型 (GRM) ⭐ **推荐**
+
 ```bash
-# Reward Model 训练
+# 1. 下载生成式RM模型 (~70GB)
+bash scripts/download_qwen35_35b_a3b.sh
+
+# 2. 运行GRPO训练（无需训练RM）
+bash scripts/train_grpo_GRM.sh
+```
+
+**优点：**
+- ✅ 无需训练奖励模型，节省时间
+- ✅ 使用强大的35B模型进行打分
+- ✅ 更准确的评审质量评估
+
+详见：[生成式RM快速指南](docs/GRM_quickstart.md)
+
+#### 方法2: 传统训练流程
+
+```bash
+# Step 1: 训练 Reward Model
 bash scripts/train_rm_full_content_7gpu.sh
+
+# Step 2: GRPO 训练
+bash scripts/train_grpo_pipeline.sh
 
 # 或后台运行
 nohup bash scripts/train_rm_full_content_7gpu.sh > logs/rm_training.log 2>&1 &
@@ -43,7 +65,26 @@ nohup bash scripts/train_rm_full_content_7gpu.sh > logs/rm_training.log 2>&1 &
 
 ### 📖 核心文档
 
-- **[Reward Model 训练指南](docs/Reward_Model_Training_Guide.md)** ⭐ **推荐**
+#### 生成式奖励模型 (GRM) ⭐ **新功能**
+
+- **[生成式RM快速指南](docs/GRM_quickstart.md)** ⭐ **推荐**
+  - 使用Qwen3.5-35B-A3B作为生成式RM
+  - 无需训练RM，直接使用
+  - 快速开始指南
+
+- **[脚本对比指南](docs/GRM_script_comparison.md)**
+  - 三种GRPO脚本详细对比
+  - 选择合适的训练方式
+  - 迁移指南
+
+- **[生成式RM完整指南](docs/generative_rm_guide.md)**
+  - 架构详解
+  - 配置说明
+  - 故障排除
+
+#### 传统训练流程
+
+- **[Reward Model 训练指南](docs/Reward_Model_Training_Guide.md)**
   - 数据合成流程
   - 训练脚本使用
   - 参数调优
