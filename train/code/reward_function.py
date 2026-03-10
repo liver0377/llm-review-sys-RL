@@ -1,128 +1,168 @@
+"""
+External Reward Function for Paper Review GRPO Training
+Calls external vLLM RM service to compute rewards
+"""
+
+import asyncio
+import logging
+import os
 import re
-from typing import List, Dict, Any
-from swift.rewards import ORM
+from typing import Dict, Any
 
-FORMAT_PATTERNS = {
-    "overall_quality": r"\*{0,2}Overall Quality:\*{0,2}\s*([1-9](?:\.[0-9])?|10(?:\.0)?)",
-    "review_confidence": r"\*{0,2}Review Confidence:\*{0,2}\s*([1-5](?:\.[0-9])?)",
-    "key_points": r"### Key Points",
-    "strengths_weaknesses": r"### Strengths and Weaknesses",
-    "strengths": r"\*\*Strengths:\*\*",
-    "weaknesses": r"\*\*Weaknesses:\*\*",
-    "suggestions": r"### Suggestions for Improvement",
-    "rating_section": r"### Rating",
-}
+from openai import AsyncOpenAI
 
-FORMAT_SCORES = {
-    "overall_quality": 1.0,
-    "review_confidence": 1.0,
-    "key_points": 0.5,
-    "strengths_weaknesses": 0.25,
-    "strengths": 0.25,
-    "weaknesses": 0.25,
-    "suggestions": 0.5,
-    "rating_section": 0.25,
-}
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "INFO"))
 
 
-def compute_format_score(response: str) -> float:
-    total_score = 0.0
-    for key, pattern in FORMAT_PATTERNS.items():
-        if re.search(pattern, response, re.IGNORECASE):
-            total_score += FORMAT_SCORES[key]
-    return total_score
+class ExternalReviewRM:
+    """External Reward Model for paper review evaluation"""
+
+    def __init__(
+        self,
+        rm_api_base: str = "http://127.0.0.1:8002/v1",
+        max_concurrent: int = 32,
+        timeout: int = 120,
+    ):
+        self.rm_api_base = rm_api_base
+        self.max_concurrent = max_concurrent
+        self.timeout = timeout
+
+        self.client = AsyncOpenAI(
+            api_key="EMPTY", base_url=rm_api_base, timeout=timeout, max_retries=2
+        )
+
+        self.model_name = None
+        self._init_model_name()
+
+        logger.info(f"Initialized ExternalReviewRM")
+        logger.info(f"  API Base: {rm_api_base}")
+        logger.info(f"  Model: {self.model_name}")
+        logger.info(f"  Max Concurrent: {max_concurrent}")
+
+    def _init_model_name(self):
+        """Initialize model name from RM service"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            models = loop.run_until_complete(self.client.models.list())
+            self.model_name = (
+                models.data[0].id if models.data else "models/Qwen3-8B-Base"
+            )
+            loop.close()
+        except Exception as e:
+            logger.warning(f"Failed to get model name: {e}")
+            self.model_name = "models/Qwen3-8B-Base"
+
+    def compute_format_score(self, text: str) -> float:
+        """Compute format score (0-4) based on review structure"""
+        score = 0.0
+
+        if re.search(r"\*\*Overall Quality:\*\*", text, re.IGNORECASE):
+            score += 1.0
+        if re.search(r"### Key Points", text, re.IGNORECASE):
+            score += 0.5
+        if re.search(r"\*\*Strengths:\*\*", text, re.IGNORECASE):
+            score += 0.25
+        if re.search(r"\*\*Weaknesses:\*\*", text, re.IGNORECASE):
+            score += 0.25
+        if re.search(r"### Suggestions for Improvement", text, re.IGNORECASE):
+            score += 0.5
+        if re.search(r"### Rating", text, re.IGNORECASE):
+            score += 0.25
+
+        return score
+
+    async def compute_rm_score(self, prompt: str, response: str) -> float:
+        """Compute quality score (0-10) using external RM service"""
+        try:
+            user_prompt = f"""<Paper Review Task>
+{prompt[:1500]}
+</Paper Review Task>
+
+<Generated Review>
+{response[:2500]}
+</Generated Review>
+
+Please assess the quality of this review (1-10). 
+Provide a score in format: **Overall Quality:** X.X"""
+
+            resp = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a paper review quality evaluator.",
+                    },
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=128,
+                temperature=0.1,
+            )
+
+            content = resp.choices[0].message.content
+            match = re.search(
+                r"Overall Quality:\*{0,2}\s*(\d+\.?\d*)", content, re.IGNORECASE
+            )
+            if match:
+                score = float(match.group(1))
+                return min(max(score, 0.0), 10.0)
+            return 5.0
+        except Exception as e:
+            logger.error(f"RM API error: {e}")
+            return 5.0
+
+    async def compute_reward(
+        self, prompt: str, response: str, **kwargs
+    ) -> Dict[str, Any]:
+        """Compute total reward for a review"""
+        format_score = self.compute_format_score(response)
+        rm_score = await self.compute_rm_score(prompt, response)
+
+        total_score = format_score + rm_score
+
+        return {
+            "score": total_score,
+            "format_score": format_score,
+            "rm_score": rm_score,
+        }
 
 
-def extract_overall_quality(response: str) -> float:
-    match = re.search(
-        r"\*\*Overall Quality:\*\*\s*([1-9](?:\.[0-9])?|10(?:\.0)?)",
-        response,
-        re.IGNORECASE,
-    )
-    if match:
-        return float(match.group(1))
-    return None
+def get_reward_function(rm_api_base: str = "http://127.0.0.1:8002/v1", **kwargs):
+    """Factory function to create reward function instance"""
+    return ExternalReviewRM(rm_api_base=rm_api_base, **kwargs)
 
 
-def extract_review_confidence(response: str) -> float:
-    match = re.search(
-        r"\*\*Review Confidence:\*\*\s*([1-5](?:\.[0-9])?)", response, re.IGNORECASE
-    )
-    if match:
-        return float(match.group(1))
-    return None
+async def compute_score_async(
+    data_source: str, solution_str: str, ground_truth: str, extra_info: dict, **kwargs
+):
+    """
+    Async function compatible with veRL's reward function interface
 
+    This function is called by veRL during training to compute rewards.
 
-class FormatRewardFunction(ORM):
-    def __init__(self, alpha: float = 1.0, **kwargs):
-        super().__init__(**kwargs)
-        self.alpha = alpha
+    Args:
+        data_source: Data source identifier
+        solution_str: Generated review text
+        ground_truth: Ground truth (not used for review generation)
+        extra_info: Extra information from dataset
 
-    def __call__(self, completions: List[str], **kwargs) -> List[float]:
-        rewards = []
-        for completion in completions:
-            format_score = compute_format_score(completion)
-            rewards.append(format_score)
-        return rewards
+    Returns:
+        Dict with 'score' key and other metadata
+    """
+    rm_api_base = kwargs.get("rm_api_base", "http://127.0.0.1:8002/v1")
 
+    rm = get_reward_function(rm_api_base=rm_api_base)
 
-class CombinedRewardFunction(ORM):
-    def __init__(self, alpha: float = 1.0, format_weight: float = 1.0, **kwargs):
-        super().__init__(**kwargs)
-        self.alpha = alpha
-        self.format_weight = format_weight
+    prompt = ""
+    for key, value in extra_info.items():
+        if isinstance(value, str) and len(value) > 100:
+            prompt = value
+            break
 
-    def __call__(
-        self, completions: List[str], rm_scores: List[float] = None, **kwargs
-    ) -> List[float]:
-        rewards = []
-        for i, completion in enumerate(completions):
-            format_score = compute_format_score(completion)
-            rm_score = rm_scores[i] if rm_scores and i < len(rm_scores) else 0.0
-            total_reward = self.format_weight * format_score + self.alpha * rm_score
-            rewards.append(total_reward)
-        return rewards
+    if not prompt and "prompt" in extra_info:
+        prompt = extra_info["prompt"]
 
+    result = await rm.compute_reward(prompt, solution_str)
 
-def create_reward_function(alpha: float = 1.0):
-    return FormatRewardFunction(alpha=alpha)
-
-
-def analyze_review_quality(response: str) -> Dict[str, Any]:
-    format_score = compute_format_score(response)
-    overall_quality = extract_overall_quality(response)
-    review_confidence = extract_review_confidence(response)
-
-    has_key_points = bool(
-        re.search(FORMAT_PATTERNS["key_points"], response, re.IGNORECASE)
-    )
-    has_strengths_weaknesses = bool(
-        re.search(FORMAT_PATTERNS["strengths_weaknesses"], response, re.IGNORECASE)
-    )
-    has_strengths = bool(
-        re.search(FORMAT_PATTERNS["strengths"], response, re.IGNORECASE)
-    )
-    has_weaknesses = bool(
-        re.search(FORMAT_PATTERNS["weaknesses"], response, re.IGNORECASE)
-    )
-    has_suggestions = bool(
-        re.search(FORMAT_PATTERNS["suggestions"], response, re.IGNORECASE)
-    )
-    has_rating = bool(
-        re.search(FORMAT_PATTERNS["rating_section"], response, re.IGNORECASE)
-    )
-
-    return {
-        "format_score": format_score,
-        "max_format_score": 4.0,
-        "format_percentage": format_score / 4.0 * 100,
-        "overall_quality": overall_quality,
-        "review_confidence": review_confidence,
-        "has_key_points": has_key_points,
-        "has_strengths_weaknesses": has_strengths_weaknesses,
-        "has_strengths": has_strengths,
-        "has_weaknesses": has_weaknesses,
-        "has_suggestions": has_suggestions,
-        "has_rating": has_rating,
-        "is_complete": format_score >= 4.0,
-    }
+    return result

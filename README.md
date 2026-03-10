@@ -1,6 +1,6 @@
 # 论文评审强化学习训练系统
 
-> 基于 Swift 框架的 GRPO 强化学习训练系统，用于优化论文评审生成模型
+> 基于 veRL 框架的 GRPO 强化学习训练系统，用于优化论文评审生成模型
 
 ---
 
@@ -9,115 +9,54 @@
 ### 1. 环境准备
 
 ```bash
-# 安装依赖
-pip install -r requirements.txt
+# 激活 veRL 环境
+conda activate verl
 
-# 检查 GPU
-nvidia-smi
+# 验证安装
+python -c "import verl; print('veRL version:', verl.__version__)"
 ```
 
 ### 2. 数据准备
 
 ```bash
-# 转换 RM 训练数据
-python scripts/convert_dpo_to_rm_swift_format.py \
-    --dpo_train data/openreview_dataset/dpo_vllm_as_rejected_train_cleaned.json \
-    --dpo_val data/openreview_dataset/dpo_vllm_as_rejected_val_cleaned.json \
-    --max_train_samples 5000 \
-    --random_sample
+# 转换数据为 veRL 格式（parquet）
+bash scripts/prepare_data.sh
 ```
 
-### 3. 启动训练
+### 3. 启动 Reward Model 服务
 
-#### 方法1: 使用生成式奖励模型 (GRM) ⭐ **推荐**
+训练前需要先启动 Reward Model 的 vLLM 服务：
 
 ```bash
-# 1. 下载生成式RM模型 (~70GB)
-bash scripts/download_qwen35_35b_a3b.sh
+# 在 GPU 4-7 上启动 RM 服务
+bash scripts/start_rm_service.sh
 
-# 2. 运行GRPO训练（无需训练RM）
-bash scripts/train_grpo_GRM.sh
+# 检查服务状态
+curl http://127.0.0.1:8002/health
 ```
 
-**优点：**
-- ✅ 无需训练奖励模型，节省时间
-- ✅ 使用强大的35B模型进行打分
-- ✅ 更准确的评审质量评估
+**服务配置：**
+- 模型: Qwen3-8B-Base
+- GPU: 4,5,6,7 (Tensor Parallel = 4)
+- 端口: 8002
 
-详见：[生成式RM快速指南](docs/GRM_quickstart.md)
-
-#### 方法2: 传统训练流程
+### 4. 启动 GRPO 训练
 
 ```bash
-# Step 1: 训练 Reward Model
-bash scripts/train_rm_full_content_7gpu.sh
+# 在 GPU 0-3 上启动训练
+bash scripts/train_grpo.sh
 
-# Step 2: GRPO 训练
-bash scripts/train_grpo_pipeline.sh
-
-# 或后台运行
-nohup bash scripts/train_rm_full_content_7gpu.sh > logs/rm_training.log 2>&1 &
+# 查看训练日志
+tail -f logs/grpo_training_*.log
 ```
 
----
-
-## 文档导航
-
-### 📖 核心文档
-
-#### 生成式奖励模型 (GRM) ⭐ **新功能**
-
-- **[生成式RM快速指南](docs/GRM_quickstart.md)** ⭐ **推荐**
-  - 使用Qwen3.5-35B-A3B作为生成式RM
-  - 无需训练RM，直接使用
-  - 快速开始指南
-
-- **[脚本对比指南](docs/GRM_script_comparison.md)**
-  - 三种GRPO脚本详细对比
-  - 选择合适的训练方式
-  - 迁移指南
-
-- **[生成式RM完整指南](docs/generative_rm_guide.md)**
-  - 架构详解
-  - 配置说明
-  - 故障排除
-
-#### 传统训练流程
-
-- **[Reward Model 训练指南](docs/Reward_Model_Training_Guide.md)**
-  - 数据合成流程
-  - 训练脚本使用
-  - 参数调优
-  - 常见问题
-
-- **[GRPO 训练 README](docs/GRPO_Training_README.md)**
-  - GRPO 训练流程
-  - 奖励函数设计
-  - VLLM 集成
-
-- **[GRPO RL Pipeline](docs/GRPO_RL_Pipeline.md)**
-  - 完整训练流程
-  - RM + GRPO 两阶段训练
-
-### 📊 数据分析
-
-- **[Query 策略最终方案](docs/RM_QUERY_STRATEGY_FINAL.md)**
-  - Token 分布分析
-  - 为什么选择完整论文
-  - max_length 选择依据
-
-- **[Token 分布统计](docs/rm_token_stats.txt)**
-  - 详细的 token 长度统计
-
-- **[完整 Token 分析](docs/rm_query_token_distribution_comprehensive.txt)**
-  - 不同策略的对比
-
-### 📈 其他文档
-
-- [评估指南](docs/评估.md)
-- [训练曲线](docs/训练曲线.md)
-- [数据爬取与处理](docs/数据爬取与处理.md)
-- [DPO 偏好优化](docs/dpo偏好优化.md)
+**训练配置：**
+- 框架: veRL 0.8.0
+- 算法: GRPO
+- 策略模型: Qwen3-8B-Base
+- GPU: 0,1,2,3 (FSDP + vLLM)
+- 数据: data/openreview_dataset/train.parquet
+- 输出: models/grpo_qwen3_8b_verl/
 
 ---
 
@@ -125,172 +64,172 @@ nohup bash scripts/train_rm_full_content_7gpu.sh > logs/rm_training.log 2>&1 &
 
 ```
 llm-review-sys-RL/
-├── configs/                      # 配置文件
-│   ├── deepspeed_zero2_config.json
-│   ├── deepspeed_zero3_config.json
-│   └── custom_dataset_info.json
-│
 ├── scripts/                      # 训练脚本
-│   ├── train_rm_full_content_7gpu.sh    # RM 训练（推荐）
-│   ├── train_grpo.sh                    # GRPO 训练
-│   ├── convert_dpo_to_rm_swift_format.py
-│   ├── analyze_rm_token_distribution.py
-│   └── ...
+│   ├── prepare_data.sh           # 数据预处理
+│   ├── start_rm_service.sh       # 启动 RM 服务
+│   ├── stop_rm_service.sh        # 停止 RM 服务
+│   ├── train_grpo.sh             # 训练主脚本
+│   ├── run_grpo_verl.sh          # veRL 配置
+│   └── data/
+│       └── prepare_openreview_parquet.py
 │
 ├── train/code/                   # 训练代码
-│   ├── reward_function.py        # 格式奖励函数
-│   ├── plugin.py                 # GRPO 插件
-│   └── rm_plugin.py              # RM 插件
+│   └── reward_function.py        # External RM Reward Function
 │
 ├── data/openreview_dataset/      # 数据集
-│   ├── rm_train.json             # RM 训练数据
-│   ├── rm_val.json               # RM 验证数据
+│   ├── grpo_train.json           # 原始训练数据
+│   ├── train.parquet             # veRL 格式数据
 │   └── ...
 │
 ├── docs/                         # 文档
-│   ├── Reward_Model_Training_Guide.md  ⭐
-│   ├── GRPO_Training_README.md
-│   └── ...
+│   └── RL_SYSTEM_GUIDE.md        # 系统详细说明
 │
 ├── logs/                         # 训练日志
+│
 └── models/                       # 模型输出
-    ├── qwen3-8b-base/           # 基础模型
-    └── reward_model_qwen3_8b/   # RM 输出
+    ├── Qwen3-8B-Base/           # 基础模型
+    └── grpo_qwen3_8b_verl/      # GRPO 训练输出
 ```
 
 ---
 
-## 训练进度
+## 核心特性
 
-### 当前状态
+### 1. veRL 框架
 
-**Reward Model 训练**：
-- ✅ 数据准备完成（5000 samples）
-- ✅ 训练脚本配置完成
-- ⏳ 训练进行中
+使用 ByteDance 开发的 veRL 框架：
+- **Hybrid Controller**: 混合控制器编程模型
+- **FSDP**: PyTorch Fully Sharded Data Parallel
+- **vLLM**: 高效推理引擎集成
+- **Production-Ready**: 生产级性能优化
 
-**配置**：
-- 模型: Qwen3-8B
-- max_length: 16384
-- batch_size: 2
-- GPU: 7 (跳过 GPU 4)
-- 显存使用: ~77 GiB (96% 利用率)
+### 2. GRPO 算法
 
-**监控**：
-- WandB: https://wandb.ai/liverspecial-dlut-edu-cn/reward_model_grpo
-- 日志: `logs/rm_training_*.log`
+Group Relative Policy Optimization：
+- **无需 Critic**: 不需要训练 Value Network
+- **组内归一化**: 在同组 response 间计算优势
+- **KL 正则化**: 稳定的策略优化
 
-### 下一步
+### 3. External RM Service
 
-- [ ] 完成 RM 训练（预计 8 小时）
-- [ ] 评估 RM 模型
-- [ ] 准备 GRPO 数据
-- [ ] 启动 GRPO 训练
+分离式 Reward Model 架构：
+- **独立部署**: RM 和 Policy 在不同 GPU 组
+- **异步批量**: 高效的并发 Reward 计算
+- **灵活扩展**: 可独立扩展和监控
 
 ---
 
-## 快速命令
+## 训练流程
 
-### 检查训练状态
-
-```bash
-# 查看 GPU
-nvidia-smi
-
-# 查看日志
-tail -f logs/rm_training_*.log
-
-# 检查进程
-ps aux | grep "swift rlhf"
-
-# 检查 checkpoint
-ls -lh models/reward_model_qwen3_8b/v0-*/checkpoint-*/
-```
-
-### 停止训练
+### 完整流程
 
 ```bash
-# 查找进程
-ps aux | grep "swift rlhf" | grep -v grep
+# Step 1: 准备数据
+bash scripts/prepare_data.sh
 
-# 停止进程
-pkill -f "swift/cli/rlhf.py"
+# Step 2: 启动 RM 服务（GPU 4-7）
+bash scripts/start_rm_service.sh
+
+# Step 3: 等待 RM 服务就绪
+curl http://127.0.0.1:8002/health
+
+# Step 4: 启动训练（GPU 0-3）
+bash scripts/train_grpo.sh
+
+# Step 5: 监控训练
+tail -f logs/grpo_training_*.log
 ```
 
-### 重新开始
+### 并行策略
 
-```bash
-# 清理旧模型
-rm -rf models/reward_model_qwen3_8b
-
-# 重新训练
-bash scripts/train_rm_full_content_7gpu.sh
 ```
+GPU 0-3: Policy Model
+├─ FSDP 分布式训练
+├─ vLLM 推理引擎
+└─ Tensor Parallel = 4
+
+GPU 4-7: Reward Model
+├─ vLLM 推理服务
+├─ Tensor Parallel = 4
+└─ 异步批量处理
+```
+
+---
+
+## 详细文档
+
+完整的系统说明、算法详解、配置调优等内容，请查看：
+
+**[系统详细说明文档](docs/RL_SYSTEM_GUIDE.md)**
+
+包含内容：
+- GRPO 算法原理与实现
+- veRL 框架特性详解
+- Reward 计算机制
+- 训练配置详解
+- 性能优化指南
+- 监控与调试
+- 常见问题解答
 
 ---
 
 ## 常见问题
 
-### Q: 如何选择 max_length？
+### Q: veRL 和 swift 有什么区别？
 
-**A**: 参考文档 [RM_QUERY_STRATEGY_FINAL.md](docs/RM_QUERY_STRATEGY_FINAL.md)
+A: veRL 是专门的 RL 训练框架，特性包括：
+- 混合控制器编程模型
+- FSDP + vLLM 无缝集成
+- 生产级性能优化
+- 更灵活的分布式配置
 
-- 16384: 覆盖 99.4% 样本（推荐）
-- 12288: 覆盖 95% 样本（显存紧张时）
-- 20000: 覆盖 99.5% 样本（显存充足时）
+### Q: 训练时显存不足？
 
-### Q: 显存不足怎么办？
-
-**A**: 参考 [Reward_Model_Training_Guide.md](docs/Reward_Model_Training_Guide.md#常见问题)
-
+调整配置参数：
 ```bash
-# 方案 1: 减小 batch size
---per_device_train_batch_size 1
-
-# 方案 2: 减小 max_length
---max_length 12288
-
-# 方案 3: 使用 ZeRO-3
---deepspeed configs/deepspeed_zero3_config.json
+# 在 scripts/run_grpo_verl.sh 中修改
+data.train_batch_size=32
+actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1
+actor_rollout_ref.actor.fsdp_config.param_offload=True
 ```
 
-### Q: 训练速度慢怎么办？
+### Q: RM 服务无响应？
 
-**A**: 
-
+检查服务状态：
 ```bash
-# 增大 batch size（如果显存允许）
---per_device_train_batch_size 4
---gradient_accumulation_steps 4
-
-# 关闭 gradient checkpointing（如果显存允许）
---gradient_checkpointing false
-```
-
-### Q: Loss 不下降怎么办？
-
-**A**: 
-
-```bash
-# 调整学习率
---learning_rate 2e-5  # 尝试 5e-6 ~ 5e-5
-
-# 检查数据质量
-python scripts/analyze_rm_token_distribution.py
+curl http://127.0.0.1:8002/health
+tail -f logs/rm_service.log
 ```
 
 ---
 
-## 许可证
+## 技术栈
 
-MIT License
+- **框架**: veRL 0.8.0 (ByteDance)
+- **模型**: Qwen3-8B-Base
+- **训练引擎**: PyTorch FSDP
+- **推理引擎**: vLLM
+- **算法**: GRPO
+- **数据格式**: Parquet
+
+---
+
+## 参考资料
+
+- [veRL Documentation](https://verl.readthedocs.io/)
+- [GRPO Paper](https://arxiv.org/pdf/2402.03300)
+- [veRL GitHub](https://github.com/volcengine/verl)
 
 ---
 
 ## 更新日志
 
-### 2026-03-06
-- ✅ 创建完整 RM 训练指南
-- ✅ 优化显存利用率（96%）
-- ✅ 更新文档结构
-- ✅ 添加快速开始指南
+### 2026-03-10
+- ✅ 完全迁移到 veRL 框架
+- ✅ 实现 External RM Reward Function
+- ✅ 优化训练配置
+- ✅ 创建完整的系统说明文档
+
+### 2026-03-09
+- ✅ 删除所有 swift 相关代码
+- ✅ 清理项目结构

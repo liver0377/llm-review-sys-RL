@@ -1,0 +1,37 @@
+# veRL GRPO配置
+model:
+  model_path: models/Qwen3-8B-Base
+  tokenizer_path: models/Qwen3-8B-Base
+  
+data:
+  train_path: data/openreview_dataset/grpo_train.json
+  val_path: data/openreview_dataset/grpo_val.json
+  max_prompt_length: 14336
+  max_response_length: 2000
+  
+training:
+  output_dir: models/grpo_qwen3_8b_verl
+  num_epochs: 1
+  batch_size: 4
+  learning_rate: 5e-7
+  num_generations: 3
+  temperature: 0.7
+  
+rollout:
+  update_weights_bucket_megabytes: 8192  # 增加到8GB
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.8
+  
+actor:
+  model_path: models/Qwen3-8B-Base
+  micro_batch_size: 2
+  
+ref:
+  model_path: models/Qwen3-8B-Base
+  
+reward:
+  external_rm_url: http://127.0.0.1:8002/v1
+  
+optimization:
+  gradient_checkpointing: true
+  use_kernels: false

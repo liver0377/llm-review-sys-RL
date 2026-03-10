@@ -14,3 +14,5 @@ data/**/*.json
 */**/*.txt
 */**/*.pdf
 data/**/*.md
+data/openreview_dataset
+outputs/

@@ -3,12 +3,12 @@ set -e
 
 echo "========================================"
 echo "Starting Reward Model Service"
-echo "Using Qwen3.5-35B-A3B with vLLM"
+echo "Using Qwen3-8B-Base with vLLM"
 echo "========================================"
 
 cd /data/wudw/llm-review-sys-RL
 
-REWARD_MODEL_PATH="models/Qwen3.5-35B-A3B-Base"
+REWARD_MODEL_PATH="models/Qwen3-8B-Base"
 
 # 检查模型是否存在
 if [ ! -d "${REWARD_MODEL_PATH}" ]; then
@@ -42,7 +42,10 @@ echo "  Reward Model:        ${REWARD_MODEL_PATH}"
 echo "  GPUs:               4,5,6,7"
 echo "  Tensor Parallel:    4"
 echo "  Port:               $PORT"
-echo "  Max Model Length:   4096"
+echo "  Max Model Length:   8192"
+echo "  Max Num Seqs:       128"
+echo "  Max Batched Tokens: 65536"
+echo "  GPU Memory Util:    0.9"
 echo ""
 
 echo "[Step 1] Checking GPU availability..."
@@ -76,7 +79,10 @@ echo "  vllm serve ${REWARD_MODEL_PATH} \\"
 echo "    --tensor-parallel-size 4 \\"
 echo "    --port $PORT \\"
 echo "    --host 0.0.0.0 \\"
-echo "    --max-model-len 4096 \\"
+echo "    --max-model-len 8192 \\"
+echo "    --max-num-seqs 128 \\"
+echo "    --max-num-batched-tokens 65536 \\"
+echo "    --gpu-memory-utilization 0.9 \\"
 echo "    --dtype bfloat16 \\"
 echo "    --trust-remote-code"
 echo ""
@@ -86,7 +92,10 @@ nohup vllm serve "${REWARD_MODEL_PATH}" \
     --tensor-parallel-size 4 \
     --port $PORT \
     --host 0.0.0.0 \
-    --max-model-len 4096 \
+    --max-model-len 8192 \
+    --max-num-seqs 128 \
+    --max-num-batched-tokens 65536 \
+    --gpu-memory-utilization 0.9 \
     --dtype bfloat16 \
     --trust-remote-code \
     > logs/rm_service.log 2>&1 &
