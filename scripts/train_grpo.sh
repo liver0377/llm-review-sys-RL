@@ -63,7 +63,7 @@ echo "[Step 4] Activating Environment..."
 echo "----------------------------------------"
 
 source /data/wudw/miniconda3/etc/profile.d/conda.sh
-conda activate verl
+conda activate verl_flash_a
 
 # Set CUDA environment variables
 export CUDA_HOME=/usr/local/cuda
@@ -83,12 +83,12 @@ export WANDB_PROJECT=grpo_verl_openreview
 echo "Training command:"
 echo "  bash scripts/run_grpo_verl.sh"
 echo ""
-echo "Logs will be saved to: logs/grpo_training_$(date +%Y%m%d_%H%M%S).log"
+echo "Logs will be saved to: logs/grpo_training.log"
 echo ""
 
 mkdir -p logs
 
-bash scripts/run_grpo_verl.sh 2>&1 | tee logs/grpo_training_$(date +%Y%m%d_%H%M%S).log
+bash scripts/run_grpo_verl.sh 2>&1 | tee logs/grpo_training.log
 
 echo ""
 echo "========================================"
